@@ -140,11 +140,53 @@ TODO: 07FindPixelsFitModel.png
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
-todo: write this point out...
+The equation for the radius of curvature is very well known and depends on the parameters of the polynomial model which has been fitted to the lanes previously. So feeding the parameters into the formula leads to the desired result. It´s worth to mention that curvature information needs to be expressed in meters in order to reflect the real world circumstances. That´s why there´s a conversion constant applied in the equation to transform from pixel space into a metric space. Besides the model parameters, there has to be a y-value provided. This value corresponds to the point of interest. Given the fact than one is typically interested in the curvature which the car currently drives, a reasonable choice is to use the maximum y value. This means, the curvature is calculated at the bottom of the picture, i.e. where the actual car would have been located. The corresponding implmenetation looks like this. Note that it does make sense to provide a unique value for the curvature. This could either be done by averaging both values for left and right lane or choose the more certain one (e.g. if the left lane is solid, there are potentially more lane pixels identified). 
+
+ 
+
+```
+def measure_curvature_real(ploty, left_fit_cr, right_fit_cr):
+    # Define conversions in x and y from pixels space to meters
+    ym_per_pix = 30/720 # meters per pixel in y dimension
+    xm_per_pix = 3.7/700 # meters per pixel in x dimension
+    
+    # Define y-value where we want radius of curvature
+    # We'll choose the maximum y-value, corresponding to the bottom of the image
+    y_eval = np.max(ploty)
+    
+    # Calculation of R_curve (radius of curvature)
+    left_curverad = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
+    right_curverad = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
+    
+    return left_curverad, right_curverad
+```
+
+In real life, the car is not always perfectly driving exactly in the middle of the lane. That´s why the information how much the car is shifted might be valuable. Assuming that the camera is mounted in the middle of the car, one can further assume that the actual lane center point is located at the middle of the picture (in x direction). This means, if the car would drive perfectly in the middle of the lane, both lane lines are equally distanced from the image center point. This assumption leads to the following implementation. Note that the same coefficient applies as above in order to express the lane center offset in meters rather than in pixel space.   
+
+```
+# m/pixel 
+xm_per_pix = 3.7/700 # meters per pixel in x dimension
+
+# The x-middle of the image (in meter)
+xImgCenterPoint = imageShape[0]/2 * xm_per_pix
+
+# The actual lane center points (Acquired from the polynomial model)
+leftLaneCenterPoint = left_fitx[-1]*xm_per_pix
+rightLaneCenterPoint = right_fitx[-1]*xm_per_pix
+centerPoint = (leftLaneCenterPoint + rightLaneCenterPoint)/2
+
+# The deviation between lane center point and image center point measures how much the car shifted away from the lane center
+# Right offset should be considered as positve shift
+laneOffset = centerPoint - xImgCenterPoint
+```
+
+
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
-todo: write this point out...
+Classification, lane matching and curvature calculation has been done in the birds eye view space. However, the left and right lane position i.e. the respective lane models have to be projected back into the actual camera space. Therefore one can calculate and apply the inverse transformation matrix from above. The final outcome containing lane area, curvatures and lane offset information projected onto the initial input image is shown below. 
+
+TODO: 08LaneAreaProjected.png
 
 
 
@@ -152,7 +194,68 @@ todo: write this point out...
 
 #### 1. Provide a link to your final video output. Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!)
 
-todo: write this point out...
+For the video pipeline implementation in "**P2VideoPipeline.ipynb**", there have been some features added to the basic version from "**P2TestImage.ipynb**". One major distinction is the partial modularization of the code. This enables a very convenient (and user friendly) way to build up the basic pipeline, as shown in the code snippet  below. 
+
+```python
+def process_image(image):
+    # 1 Apply color and gradient based thresholds
+    colorGradientFilteredImg = applyColorGradientThresholds(image)
+    # 2 Warp image into birds eye view
+    warpedImg, M = applyBirdsEyeTransform(colorGradientFilteredImg)
+    # 3 Extract the lane points and fit a polyonomial model 
+    ploty, left_fitx, right_fitx, left_fit_coeffs, right_fit_coeffs, leftPts, rightPts = fitLaneModel(warpedImg)
+    # 4 Calculate curvature and lane offset
+    left_curv_real, right_curv_real = measure_curvature_real(ploty, left_fit_coeffs, right_fit_coeffs)
+    curvature = (left_curv_real + right_curv_real)/2
+    laneOffset = calculate_lane_offset(left_fitx[-1], right_fitx[-1])
+    # 5 Render lane area and back transformation to camera view space 
+    lanesInImg = transformBackToCameraView(warpedImg, image, M, left_fitx, right_fitx, ploty, leftPts, rightPts)
+    # 6 Add curvature and lane center information
+    renderCurvatureAndLaneOffset(lanesInImg, curvature, laneOffset)
+    return lanesInImg
+```
+
+The outcome of this basic approach looks promising but isn´t very robust at locations where shadowing effects occur or the line markings are not clearly visible. Also, the above approach doesn´t take advantage of the polynomial region of interest for searching lane points, like discussed above. Adding the polynomial based search was rather straight forward, since the code from the lession quiz could be utilizied with small adaptions. The sanity check is supposed to filter out flickering lane models. The idea is to check whether a certain lane finding (i.e. lane model) seems to be reasonable. Whenver a lane model was identified as invalid, this information gets dropped. This means that the information from the previous valid frame is used instead. There are two conditions which are used in order to prove validity. The first one leverages the fact that one has a prior belief of how the polynomial model looks like, i.e. what reasonable values for the corresponding paramters (a, b, c) are. So, one can directly check whether a certain lane model parameter is greater than a defined threshold. The second check builds upon the assumption that the lane model parameters don´t rapidly change from the previous frame to the current one. So, one can check the deviation against a certain threshold in order to identify outliers. The defintion of this extended pipeline is shown above. Note that the suggested lane class from the lecture is used to keep track of the current lane findings, which is iteratively updated in the "**sanityCheck( )**" function.  
+
+```python
+def process_image_smooth(image):
+    # 1 Apply color and gradient based thresholds
+    colorGradientFilteredImg = applyColorGradientThresholds(image)
+    # 2 Warp image into birds eye view
+    warpedImg, M = applyBirdsEyeTransform(colorGradientFilteredImg)
+    # 3 Extract the lane points and fit a polyonomial model
+    if leftLane.detected == False and rightLane.detected == False: 
+        slidingWindow = True
+    else:
+        slidingWindow = False
+    left_fit_prev = leftLane.current_fit
+    right_fit_prev = rightLane.current_fit
+    ploty, left_fitx, right_fitx, left_fit_coeffs, right_fit_coeffs, leftPts, rightPts = fitLaneModel(warpedImg, left_fit_prev, right_fit_prev, slidingWindow)
+    # 4 Calculate curvature and lane offset
+    left_curv_real, right_curv_real = measure_curvature_real(ploty, left_fit_coeffs, right_fit_coeffs)
+    curvature = (left_curv_real + right_curv_real)/2
+    laneOffset = calculate_lane_offset(left_fitx[-1], right_fitx[-1])
+    # 5 Run sanity check over findings in this particular image and update the lane class information accordingly
+    leftLaneFindings = [left_fitx, left_curv_real, left_fit_coeffs, leftPts]
+    rightLaneFindings = [right_fitx, right_curv_real, right_fit_coeffs, rightPts]
+    sanityCheck(leftLaneFindings, rightLaneFindings)
+    # 6 Render lane area and back transformation to camera view space 
+    # Take lane information which is tracked in the lane classes
+    left_fitx = leftLane.recent_xfitted 
+    right_fitx = rightLane.recent_xfitted
+    leftPts = leftLane.allx
+    rightPts = rightLane.allx
+    curvature = (leftLane.radius_of_curvature + rightLane.radius_of_curvature)/2
+    laneOffset = calculate_lane_offset(left_fitx[-1], right_fitx[-1])
+    lanesInImg = transformBackToCameraView(warpedImg, image, M, left_fitx, right_fitx, ploty, leftPts, rightPts)
+    # 7 Add curvature and lane center information
+    renderCurvatureAndLaneOffset(lanesInImg, curvature, laneOffset)
+    return lanesInImg
+```
+
+A link to the final video outcome is provided here: 
+
+TODO: Link video
 
 
 
@@ -162,83 +265,15 @@ todo: write this point out...
 
 todo: write this point out...
 
+- why I used this appraoch
+- what worked and what not
+- it was adapted to test images (Overfits to this problem --> may not generalize very well but is a good starting point for further work and harder problems)
+- ........
+- limitations
+- One could additionally apply ROI on the warped (i.e. birds eyes view) image as there are still some artefacts due to the damaged road segments or shadow effects. Applying ROI 
 
 
 
 
 
 
-### Pipeline (single images)
-
-#### 1. Provide an example of a distortion-corrected image.
-
-To demonstrate this step, I will describe how I apply the distortion correction to one of the test images like this one:
-![alt text][image2]
-
-#### 2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
-
-I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines # through # in `another_file.py`).  Here's an example of my output for this step.  (note: this is not actually from one of the test images)
-
-![alt text][image3]
-
-#### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
-
-The code for my perspective transform includes a function called `warper()`, which appears in lines 1 through 8 in the file `example.py` (output_images/examples/example.py) (or, for example, in the 3rd code cell of the IPython notebook).  The `warper()` function takes as inputs an image (`img`), as well as source (`src`) and destination (`dst`) points.  I chose the hardcode the source and destination points in the following manner:
-
-```python
-src = np.float32(
-    [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
-    [((img_size[0] / 6) - 10), img_size[1]],
-    [(img_size[0] * 5 / 6) + 60, img_size[1]],
-    [(img_size[0] / 2 + 55), img_size[1] / 2 + 100]])
-dst = np.float32(
-    [[(img_size[0] / 4), 0],
-    [(img_size[0] / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), 0]])
-```
-
-This resulted in the following source and destination points:
-
-| Source        | Destination   |
-|:-------------:|:-------------:|
-| 585, 460      | 320, 0        |
-| 203, 720      | 320, 720      |
-| 1127, 720     | 960, 720      |
-| 695, 460      | 960, 0        |
-
-I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
-
-![alt text][image4]
-
-#### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
-
-Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
-
-![alt text][image5]
-
-#### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
-
-I did this in lines # through # in my code in `my_other_file.py`
-
-#### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
-
-I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
-
-![alt text][image6]
-
----
-
-### Pipeline (video)
-
-#### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
-
-Here's a [link to my video result](./project_video.mp4)
-
----
-
-### Discussion
-
-#### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
-
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
