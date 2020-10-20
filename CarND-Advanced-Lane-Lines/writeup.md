@@ -40,7 +40,7 @@ cv.calibrateCamera().
 
 After reading the calibration images and grayscaling them, one can apply **cv.findChessboardCorners()** in order to find the points of interest. Due to the well known chessboard structure, one can manually define where these chessboard corners are supposed to be in the real world. Both point structures, the real world points and the points which have been identified in the 2D calibration image serve as input for **cv.calibrateCamera()**. Like described above, the latter method pretty much solves an optimization problem under the hood in order to provide the camera matrix (model) and the distortion coefficients. The picture below shows the effect of undistortion. 
 
-TODO: 01Undistortion.png
+![](output_images\01Undistortion.png)
 
 
 
@@ -48,9 +48,7 @@ TODO: 01Undistortion.png
 
 #### 1. Provide an example of a distortion-corrected image. 
 
-The first step in the pipeline in to undistort the raw input image, given the camer matrix and distortion coefficients from calibration. The picutre below shows the undistortion effects. The left image corresponds to the raw test input, the right image is the undistorted version. 
-
-TODO: 02UndistortionTestImg.png
+The first step in the pipeline in to undistort the raw input image, given the camer matrix and distortion coefficients from calibration. The picutre below shows the undistortion effects. The left image corresponds to the raw test input, the right image is the undistorted version. ![](output_images\02UndistortionTestImg.png)
 
 
 
@@ -72,7 +70,7 @@ colorBinary[(S > colorThresh[0]) & (S <= colorThresh[1])] = 1
 
  The resulting binary image is shown below. 
 
-TODO: 03ColorThresholdBinary.png
+![](output_images\03ColorThresholdBinary.png)
 
 For the gradient based thresholds, there are four single binary images created, referring to gradient magnitude, gradient in x and y direction and the actual direction in which the gradient points. The actual calculation is done utilizing the Sobel operation. For a more detailed information, I refer to the "***Function Definitions***" part of "**P2TestImage.ipynb**". Based on these four outcomes, there´s some logic applied which combines (i.e. applies a logical AND operation) the x-gradient binary image with the gradient-direction one. The implementation looks like this
 
