@@ -40,6 +40,8 @@ cv.calibrateCamera().
 
 After reading the calibration images and grayscaling them, one can apply **cv.findChessboardCorners()** in order to find the points of interest. Due to the well known chessboard structure, one can manually define where these chessboard corners are supposed to be in the real world. Both point structures, the real world points and the points which have been identified in the 2D calibration image serve as input for **cv.calibrateCamera()**. Like described above, the latter method pretty much solves an optimization problem under the hood in order to provide the camera matrix (model) and the distortion coefficients. The picture below shows the effect of undistortion. 
 
+![](https://github.com/dschmoeller/02AdvancedLaneFinding/blob/master/CarND-Advanced-Lane-Lines/output_images/01Undistortion.png)
+
 ![](output_images\01Undistortion.png)
 
 
@@ -48,7 +50,11 @@ After reading the calibration images and grayscaling them, one can apply **cv.fi
 
 #### 1. Provide an example of a distortion-corrected image. 
 
-The first step in the pipeline in to undistort the raw input image, given the camer matrix and distortion coefficients from calibration. The picutre below shows the undistortion effects. The left image corresponds to the raw test input, the right image is the undistorted version. ![](output_images\02UndistortionTestImg.png)
+The first step in the pipeline in to undistort the raw input image, given the camer matrix and distortion coefficients from calibration. The picutre below shows the undistortion effects. The left image corresponds to the raw test input, the right image is the undistorted version. 
+
+![](https://github.com/dschmoeller/02AdvancedLaneFinding/blob/master/CarND-Advanced-Lane-Lines/output_images/02UndistortionTestImg.png)
+
+![](output_images\02UndistortionTestImg.png)
 
 
 
@@ -70,6 +76,8 @@ colorBinary[(S > colorThresh[0]) & (S <= colorThresh[1])] = 1
 
  The resulting binary image is shown below. 
 
+![](https://github.com/dschmoeller/02AdvancedLaneFinding/blob/master/CarND-Advanced-Lane-Lines/output_images/03ColorThresholdBinary.png)
+
 ![](output_images\03ColorThresholdBinary.png)
 
 For the gradient based thresholds, there are four single binary images created, referring to gradient magnitude, gradient in x and y direction and the actual direction in which the gradient points. The actual calculation is done utilizing the Sobel operation. For a more detailed information, I refer to the "***Function Definitions***" part of "**P2TestImage.ipynb**". Based on these four outcomes, there´s some logic applied which combines (i.e. applies a logical AND operation) the x-gradient binary image with the gradient-direction one. The implementation looks like this
@@ -90,11 +98,15 @@ gradientCombBinary[(xGradBinary==1) & (dirBinary==1)] = 1
 
   The outcome of the combined gradient based binary image is shown below. 
 
-TODO: 04GradientThresholdBinary.png
+![](https://github.com/dschmoeller/02AdvancedLaneFinding/blob/master/CarND-Advanced-Lane-Lines/output_images/04GradientThresholdBinary.png)
+
+![](output_images\04GradientThresholdBinary.png)
 
 In order to combine the color stream with the gradient based one, there has been a logical OR operator applied. The reason for this operation is to catch both findings from the two different "feature spaces". The final binary image contains both, color and gradient based information. It´s shown below. 
 
-TODO: 05ColorGradientCombined.png
+![](https://github.com/dschmoeller/02AdvancedLaneFinding/blob/master/CarND-Advanced-Lane-Lines/output_images/05ColorGradientCombined.png)
+
+![](output_images\05ColorGradientCombined.png)
 
 
 
@@ -110,7 +122,7 @@ cv2.warpPerspective().
 The former function takes the eyballed source and destination points as input and returns the desired transormation matrix, which can be feed in the latter method to actually warp an input image. A code snippet of the corrsponding implementation looks like this. 
 
 ```python
-src = np.float32([[leftBottom[1], leftBottom[0]], 
+![06WarpedImage](C:\Users\Schmoeller\Desktop\Bodi\Job\01 ARGO AI\Udacity Self Driving Car Engineer\02FindingLaneLinesAdvanced\02AdvancedLaneFinding\CarND-Advanced-Lane-Lines\output_images\06WarpedImage.png)![06WarpedImage](C:\Users\Schmoeller\Desktop\Bodi\Job\01 ARGO AI\Udacity Self Driving Car Engineer\02FindingLaneLinesAdvanced\02AdvancedLaneFinding\CarND-Advanced-Lane-Lines\output_images\06WarpedImage.png)src = np.float32([[leftBottom[1], leftBottom[0]], 
                   [leftTop[1], leftTop[0]], 
                   [rightTop[1], rightTop[0]], 
                   [rightBottom[1], rightBottom[0]]])
@@ -126,7 +138,9 @@ warpedImg = cv2.warpPerspective(colorGradCombBinary, M, imageShape)
 
  The warped binary image created in this way is shown below. Note that both lanes are roughly parallel, which is a reasonable sanity check for the correctness of the transformation matrix. 
 
-TODO: 06WarpedImage.png
+![](https://github.com/dschmoeller/02AdvancedLaneFinding/blob/master/CarND-Advanced-Lane-Lines/output_images/06WarpedImage.png)
+
+![](output_images\06WarpedImage.png)
 
 
 
@@ -134,7 +148,11 @@ TODO: 06WarpedImage.png
 
 In this step, we aim to find pixels which corresponds to lane lines. Further, the goal is to identify which pixels belong to the right and left lane. In a first step, one can construct a histogram which counts the pixels upwards in each single column (i.e. along the y-direction) This is done in the lower part of the image, assuming that the lane is in fact straight there. The row (i.e the x-position) where the sum of all active (i.e. white) pixels has a max can be considered as lane center point. So, searching for two peaks in the histogram leads to the lane center position for both right and left lane. Using the lane center positions as initial setting, one can further apply a sliding window approach to track the lane along the entire picture. This approach searches for a minimum amount of pixels in a sliding window. Once this minimum amount has been identified within a window, one can assume that the lane is supposed to be within this window and an update of the mean x position can be calculated. Otherwise, i.e. the minimum amount of points hasn´t been identfied, the sliding window is shifted. This way, one can keep track of lanes which are following a curve. Applying both histogram search and sliding window can be used in order to find and track lanes within an image. Later, in the video creation step, one can also leverage the fact that the lane position might not diverge that much from frame to frame. So, it´s reasonable to apply sort of an region of interest by searching for potential lane pixels. This can be done by using the polynomial model fit of the previous frame and search around a certain margin. This speeds up computation time as not always the entire picture has to be investigated. Once lane lane pixels have been identified, it´s desirable to construct a model which actually describes the lane. This is done by a fitting a second degree polynomial to the left and right lane pixels/points respectively. Finding lane pixels and fitting a polynomial is implemented by two functins, "***find_lane_pixels ( )***" and "***fit_polynomial( )*** ". Both functions are copied from the corresponding lecture quizzes and their functionality is described above. For further implementation details, refer to the "***Function Definitions***" part of "**P2TestImage.ipynb**". Results/outcomes of the described concepts are shown below.
 
-TODO: 07FindPixelsFitModel.png  
+  ![](https://github.com/dschmoeller/02AdvancedLaneFinding/blob/master/CarND-Advanced-Lane-Lines/output_images/07FindPixelsFitModel.png)
+
+  ![](output_images\07FindPixelsFitModel.png)
+
+
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
@@ -184,7 +202,9 @@ laneOffset = centerPoint - xImgCenterPoint
 
 Classification, lane matching and curvature calculation has been done in the birds eye view space. However, the left and right lane position i.e. the respective lane models have to be projected back into the actual camera space. Therefore one can calculate and apply the inverse transformation matrix from above. The final outcome containing lane area, curvatures and lane offset information projected onto the initial input image is shown below. 
 
-TODO: 08LaneAreaProjected.png
+![](https://github.com/dschmoeller/02AdvancedLaneFinding/blob/master/CarND-Advanced-Lane-Lines/output_images/08LaneAreaProjected.png)
+
+![](output_images\08LaneAreaProjected.png)
 
 
 
@@ -253,7 +273,7 @@ def process_image_smooth(image):
 
 A link to the final video outcome is provided here: 
 
-TODO: Link video
+[]: https://github.com/dschmoeller/02AdvancedLaneFinding/blob/master/CarND-Advanced-Lane-Lines/output_videos/laneFindingVideoOutput.mp4	"LaneFindingVideoSmoothed"
 
 
 
